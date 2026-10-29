@@ -1241,6 +1241,83 @@ def test_bad_utf8():
                  b'\x80 am broken'.decode('utf8', 'replace'))
 
 
+def _uint16_char_mat(name, codes, byte_order='<', dims=None):
+    # MAT 5 file with one char array stored as miUINT16, as MATLAB writes
+    # with ``save -v6``. `codes` are the code units in Fortran order.
+    if dims is None:
+        dims = (1, len(codes))
+
+    def element(mdtype, data):
+        pad = b'\x00' * (-len(data) % 8)
+        tag = np.array([mdtype, len(data)], byte_order + 'u4').tobytes()
+        return tag + data + pad
+
+    char_data = b''.join([
+        element(mio5p.miUINT32,
+                np.array([mio5p.mxCHAR_CLASS, 0], byte_order + 'u4').tobytes()),
+        element(mio5p.miINT32, np.array(dims, byte_order + 'i4').tobytes()),
+        element(mio5p.miINT8, name.encode('ascii')),
+        element(mio5p.miUINT16, np.array(codes, byte_order + 'u2').tobytes()),
+    ])
+    header = (b'MATLAB 5.0 MAT-file'.ljust(116) + b'\x00' * 8
+              + np.array(0x0100, byte_order + 'u2').tobytes()
+              + np.array(0x4d49, byte_order + 'u2').tobytes())
+    return BytesIO(header + element(mio5p.miMATRIX, char_data))
+
+
+@pytest.mark.parametrize('byte_order', ['<', '>'])
+def test_uint16_char_default_codec(byte_order):
+    # gh-26499: by default miUINT16 char data are decoded as UTF-16 code
+    # units, so codes above 127 must not be lost or make reading fail
+    codes = [97, 228, 246, 252, 223, 233, 176, 181, 8364, 8240]
+    res = loadmat(_uint16_char_mat('c', codes, byte_order))
+    assert_equal(res['c'], [''.join(map(chr, codes))])
+
+
+def test_uint16_char_multirow():
+    # 2x3 char array 'a\xe4\xf6' / '\xfc\xdf\u20ac', code units in Fortran order
+    codes = [0x61, 0xfc, 0xe4, 0xdf, 0xf6, 0x20ac]
+    res = loadmat(_uint16_char_mat('c', codes, dims=(2, 3)))
+    assert_array_equal(res['c'], ['a\xe4\xf6', '\xfc\xdf\u20ac'])
+    res = loadmat(_uint16_char_mat('c', codes, dims=(2, 3)),
+                  chars_as_strings=False)
+    assert_array_equal(res['c'], [['a', '\xe4', '\xf6'],
+                                  ['\xfc', '\xdf', '\u20ac']])
+
+
+def test_uint16_char_empty():
+    res = loadmat(_uint16_char_mat('c', [], dims=(0, 0)))
+    assert_array_equal(res['c'], np.array([], dtype='U1'))
+
+
+def test_uint16_char_explicit_codec():
+    # Windows-1252 codes, as written by ``save -v6`` on Windows (gh-26499)
+    stream = _uint16_char_mat('x', [228, 176, 181, 128, 137])
+    res = loadmat(stream, uint16_codec='cp1252')
+    assert_equal(res['x'], ['\xe4\xb0\xb5\u20ac\u2030'])
+    # an explicit one-byte codec still decodes the low byte of each unit
+    res = loadmat(_uint16_char_mat('x', [97, 228]), uint16_codec='utf-8')
+    assert_equal(res['x'], ['a\ufffd'])
+
+
+def test_uint16_char_surrogate_pair():
+    # A surrogate pair decodes to one character, which does not fit the
+    # two-element char array in the header
+    stream = _uint16_char_mat('c', [0xd83d, 0xde00])
+    with pytest.raises(TypeError, match='buffer is too small'):
+        loadmat(stream)
+
+
+@pytest.mark.parametrize('uint16_codec', [None, 'cp1252'])
+def test_save_load_non_ascii(uint16_codec):
+    # savemat writes miUTF8, which `uint16_codec` does not affect
+    text = 'a\xe4\xdf\u20ac\u2030\u65e5\U0001f600'
+    stream = BytesIO()
+    savemat(stream, {'s': text})
+    res = loadmat(stream, uint16_codec=uint16_codec)
+    assert_equal(res['s'], [text])
+
+
 def test_save_unicode_field(tmpdir):
     filename = os.path.join(str(tmpdir), 'test.mat')
     test_dict = {'a':{'b':1,'c':'test_str'}}

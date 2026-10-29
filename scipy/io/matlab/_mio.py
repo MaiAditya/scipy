@@ -153,10 +153,11 @@ def loadmat(file_name, mdict=None, appendmat=True, *, spmatrix=_NoValue, **kwarg
             False and `squeeze_me` to True, which is required to simplify cells.
         uint16_codec : str, optional
             The codec to use for decoding characters, which are stored as uint16
-            values. The default uses the system encoding, but this can be manually
-            set to other values such as 'ascii', 'latin1', and 'utf-8'. This
-            parameter is relevant only for files stored as v6 and above, and not
-            for files stored as v4.
+            values. By default they are decoded as UTF-16 code units, so code
+            points 0-255 match Latin-1. Pass ``uint16_codec='cp1252'`` for files
+            written by MATLAB on Windows, or another codec such as 'ascii' or
+            'utf-8' as needed. This parameter is relevant only for files stored
+            as v6 and above, and not for files stored as v4.
 
     Returns
     -------

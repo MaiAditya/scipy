@@ -1,7 +1,6 @@
 """ Testing mio5_utils Cython module
 
 """
-import sys
 
 from io import BytesIO
 
@@ -77,7 +76,7 @@ def _make_readerlike(stream, byte_order=boc.native_code):
     r.mat_stream = stream
     r.byte_order = byte_order
     r.struct_as_record = True
-    r.uint16_codec = sys.getdefaultencoding()
+    r.uint16_codec = mio5p.MDTYPES[byte_order]['codecs'][mio5p.miUTF16]
     r.chars_as_strings = False
     r.mat_dtype = False
     r.squeeze_me = False

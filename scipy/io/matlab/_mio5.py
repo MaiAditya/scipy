@@ -72,7 +72,6 @@ http://blog.nephics.com/2019/08/28/better-loadmat-for-scipy/.
 import math
 import os
 import time
-import sys
 import zlib
 
 from io import BytesIO
@@ -95,10 +94,10 @@ from ._mio5_utils import VarReader5
 # Constants and helper objects
 from ._mio5_params import (MatlabObject, MatlabFunction, MDTYPES, NP_TO_MTYPES,
                           NP_TO_MXTYPES, miCOMPRESSED, miMATRIX, miINT8,
-                          miUTF8, miUINT32, mxCELL_CLASS, mxSTRUCT_CLASS,
-                          mxOBJECT_CLASS, mxCHAR_CLASS, mxSPARSE_CLASS,
-                          mxDOUBLE_CLASS, mclass_info, mat_struct,
-                          mxOPAQUE_CLASS, MatlabOpaque)
+                          miUTF8, miUTF16, miUINT32, mxCELL_CLASS,
+                          mxSTRUCT_CLASS, mxOBJECT_CLASS, mxCHAR_CLASS,
+                          mxSPARSE_CLASS, mxDOUBLE_CLASS, mclass_info,
+                          mat_struct, mxOPAQUE_CLASS, MatlabOpaque)
 
 from ._streams import ZlibInputStream
 
@@ -152,7 +151,7 @@ class MatFile5Reader(MatFileReader):
     Adds the following attribute to base class
 
     uint16_codec - char codec to use for uint16 char arrays
-        (defaults to system default codec)
+        (defaults to UTF-16 code units in the file byte order)
 
     Uses variable reader that has the following standard interface (see
     abstract class in ``miobase``::
@@ -185,8 +184,9 @@ class MatFile5Reader(MatFileReader):
     %(load_args)s
     %(struct_arg)s
     uint16_codec : {None, string}
-        Set codec to use for uint16 char arrays (e.g., 'utf-8').
-        Use system default codec if None
+        Set codec to use for uint16 char arrays (e.g., 'cp1252' for files
+        written by MATLAB on Windows). If None, decode them as UTF-16 code
+        units in the file byte order, so code points 0-255 match Latin-1.
         '''
         super().__init__(
             mat_stream,
@@ -200,7 +200,8 @@ class MatFile5Reader(MatFileReader):
             simplify_cells)
         # Set uint16 codec
         if not uint16_codec:
-            uint16_codec = sys.getdefaultencoding()
+            # the miUTF16 codec for this byte order ('utf_16_le' or 'utf_16_be')
+            uint16_codec = MDTYPES[self.byte_order]['codecs'][miUTF16]
         self.uint16_codec = uint16_codec
         # placeholders for readers - see initialize_read method
         self._file_reader = None
